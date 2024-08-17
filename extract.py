@@ -15,6 +15,7 @@ from unstract.llmwhisperer.client import LLMWhispererClient
 
 from langchain_core.rate_limiters import InMemoryRateLimiter
 
+# edit: path to save text files to
 txt_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/txt_files/"
 
 
