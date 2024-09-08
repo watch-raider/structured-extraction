@@ -15,7 +15,7 @@ import spacy
 
 import prompts
 
-# edit: path to save text files to
+# EDIT: path to save text files to
 txt_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/txt_files/"
 
 
@@ -72,30 +72,6 @@ def extract_txt_from_pdf(file_path, filename):
     else:
         print(f"{filename}.txt already exists")
 
-        
-
-# def NER(file_path, filename):
-#     # get text from txt file
-#     txt_path = f'{file_path}{filename}.txt'
-#     f = open(txt_path, "r")
-#     text = f.read()
-
-#     # Load the pre-trained SpaCy model
-#     nlp = spacy.load("en_core_web_sm")
-
-#     # Process the text
-#     doc = nlp(text)
-
-#     # Extract named entities
-#     data = {
-#         "Label": [ent.label_ for ent in doc.ents],
-#         "Text": [ent.text for ent in doc.ents]
-#     }
-
-#     #load data into a DataFrame object:
-#     df = pd.DataFrame(data)
-#     return df
-
 def TextToDict(doc_text):
     output_parser = StructuredOutputParser.from_response_schemas(prompts.response_schemas)
     format_instructions = output_parser.get_format_instructions()
@@ -107,10 +83,6 @@ def TextToDict(doc_text):
                                 format_instructions=format_instructions)
     
     print(messages[0].content)
-
-    # chat = ChatOpenAI(temperature=0.0, model="gpt-3.5-turbo")
-    # response = chat(messages)
-    #api_key = os.environ["GOOGLE_API_KEY"]
 
     model = ChatVertexAI(model="gemini-1.5-flash")
 
