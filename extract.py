@@ -1,19 +1,19 @@
-import hashlib
 import os
 import sys
-from datetime import datetime
-from pathlib import Path
 
-import requests
 from dotenv import load_dotenv
-from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate, \
-    HumanMessagePromptTemplate
-from langchain_openai import ChatOpenAI
-from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
 from unstract.llmwhisperer.client import LLMWhispererClient
 
-from langchain_core.rate_limiters import InMemoryRateLimiter
+from langchain.output_parsers import StructuredOutputParser
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain_google_vertexai import ChatVertexAI
+from langchain_core.messages import HumanMessage, SystemMessage
+
+import pandas as pd
+import spacy
+
+import prompts
 
 # edit: path to save text files to
 txt_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/txt_files/"
@@ -59,19 +59,68 @@ def get_filename_from_path(path):
     filename = filename_arr[0]
     return filename
 
-def extract_txt_from_pdf(file_list):
-    for file_path in file_list:
-        filename = get_filename_from_path(file_path)
-        file_txt_path = f'{txt_path}{filename}.txt'
+def extract_txt_from_pdf(file_path, filename):
+    # check if text file is already created for PDF
+    full_txt_path = f'{txt_path}{filename}.txt'
 
-        if os.path.exists(file_txt_path) is False:
-            raw_file_data = make_llm_whisperer_call(file_path)
+    if os.path.exists(full_txt_path) is False:
+        raw_file_data = make_llm_whisperer_call(file_path)
 
-            with open(file_txt_path, 'w') as file:
-                file.write(raw_file_data)
-            print(f"{filename}.txt created")
-        else:
-            print(f"{filename}.txt already exists")
+        with open(txt_path, 'w') as file:
+            file.write(raw_file_data)
+        print(f"{filename}.txt created")
+    else:
+        print(f"{filename}.txt already exists")
+
+        
+
+# def NER(file_path, filename):
+#     # get text from txt file
+#     txt_path = f'{file_path}{filename}.txt'
+#     f = open(txt_path, "r")
+#     text = f.read()
+
+#     # Load the pre-trained SpaCy model
+#     nlp = spacy.load("en_core_web_sm")
+
+#     # Process the text
+#     doc = nlp(text)
+
+#     # Extract named entities
+#     data = {
+#         "Label": [ent.label_ for ent in doc.ents],
+#         "Text": [ent.text for ent in doc.ents]
+#     }
+
+#     #load data into a DataFrame object:
+#     df = pd.DataFrame(data)
+#     return df
+
+def TextToDict(doc_text):
+    output_parser = StructuredOutputParser.from_response_schemas(prompts.response_schemas)
+    format_instructions = output_parser.get_format_instructions()
+    print(format_instructions)
+
+    prompt = ChatPromptTemplate.from_template(template=prompts.review_template_2)
+
+    messages = prompt.format_messages(text=doc_text, 
+                                format_instructions=format_instructions)
+    
+    print(messages[0].content)
+
+    # chat = ChatOpenAI(temperature=0.0, model="gpt-3.5-turbo")
+    # response = chat(messages)
+    #api_key = os.environ["GOOGLE_API_KEY"]
+
+    model = ChatVertexAI(model="gemini-1.5-flash")
+
+    response = model.invoke(messages)
+
+    print(response.content)
+
+    output_dict = output_parser.parse(response.content)
+    return output_dict
+
 
 def main():
     load_dotenv()
@@ -82,7 +131,18 @@ def main():
     file_list = enumerate_pdf_files(sys.argv[1])
     print(f"Processing {len(file_list)} files...")
     print(f"Processing first file: {file_list[0]}...")
-    extract_txt_from_pdf(file_list)
+    for file_path in file_list:
+        filename = get_filename_from_path(file_path)
+        extract_txt_from_pdf(file_path, filename)
+
+    for file_path in file_list:
+        filename = get_filename_from_path(file_path)
+        full_txt_path = f'{txt_path}{filename}.txt'
+        f = open(full_txt_path, "r")
+        text = f.read()
+        dict = TextToDict(text) 
+        print(dict)
+
 
 
 if __name__ == '__main__':
