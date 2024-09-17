@@ -4,19 +4,23 @@ import sys
 from dotenv import load_dotenv
 from unstract.llmwhisperer.client import LLMWhispererClient
 
-from langchain.output_parsers import StructuredOutputParser
-from langchain.chat_models import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain_google_vertexai import ChatVertexAI
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain.prompts import SystemMessagePromptTemplate, ChatPromptTemplate, \
+    HumanMessagePromptTemplate
+from langchain.output_parsers import PydanticOutputParser
 
 import pandas as pd
-import spacy
+import json
 
-import prompts
+from schema import ParsedCreditCardStatement
 
-# EDIT: path to save text files to
-txt_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/txt_files/"
+# EDIT: 
+# 1) path to save text files
+# 2) path to save json files
+txt_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/results/txt_files/"
+json_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/results/json_files/"
+csv_path = "/Users/mwalton/Documents/ELTE/PDF data extraction/sample_cc_statements/results/json_files/"
 
 
 def make_llm_whisperer_call(file_path):
@@ -25,6 +29,35 @@ def make_llm_whisperer_call(file_path):
     client = LLMWhispererClient()
     result = client.whisper(file_path=file_path, processing_mode="ocr", output_mode="line-printer")
     return result["extracted_text"]
+
+def make_llm_chat_call(text):
+    preamble = ("\n"
+                "Your ability to extract and summarize this information accurately is essential for effective "
+                "credit card statement analysis. Pay close attention to the credit card statement's language, "
+                "structure, and any cross-references to ensure a comprehensive and precise extraction of "
+                "information. Do not use prior knowledge or information from outside the context to answer the "
+                "questions. Only use the information provided in the context to answer the questions.\n")
+    postamble = "Do not include any explanation in the reply. Only include the extracted information in the reply."
+    system_template = "{preamble}"
+    system_message_prompt = SystemMessagePromptTemplate.from_template(system_template)
+    human_template = "{format_instructions}\n{raw_file_data}\n{postamble}"
+    human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
+
+    parser = PydanticOutputParser(pydantic_object=ParsedCreditCardStatement)
+
+    # compile chat template
+    chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
+    request = chat_prompt.format_prompt(preamble=preamble,
+                                        format_instructions=parser.get_format_instructions(),
+                                        raw_file_data=text,
+                                        postamble=postamble).to_messages()
+
+    model = ChatVertexAI(model="gemini-1.5-flash")
+    response = model.invoke(request)
+
+    cc_statement_object = parser.parse(response.content)
+
+    return cc_statement_object
 
 def error_exit(error_message):
     print(error_message)
@@ -68,30 +101,26 @@ def extract_txt_from_pdf(file_path, filename):
 
         with open(txt_path, 'w') as file:
             file.write(raw_file_data)
+
         print(f"{filename}.txt created")
     else:
         print(f"{filename}.txt already exists")
 
-def TextToDict(doc_text):
-    output_parser = StructuredOutputParser.from_response_schemas(prompts.response_schemas)
-    format_instructions = output_parser.get_format_instructions()
-    print(format_instructions)
+def textToJson(doc_text, filename):
+    # check if text file is already created for PDF
+    full_json_path = f'{json_path}{filename}.json'
 
-    prompt = ChatPromptTemplate.from_template(template=prompts.review_template_2)
+    if os.path.exists(full_json_path) is False:
+        cc_statement_obj = make_llm_chat_call(doc_text)
+        json_obj = cc_statement_obj.model_dump_json()
 
-    messages = prompt.format_messages(text=doc_text, 
-                                format_instructions=format_instructions)
-    
-    print(messages[0].content)
+        with open(full_json_path, "w") as file:
+            #outfile.write(json_obj)
+            file.write(json_obj)
 
-    model = ChatVertexAI(model="gemini-1.5-flash")
-
-    response = model.invoke(messages)
-
-    print(response.content)
-
-    output_dict = output_parser.parse(response.content)
-    return output_dict
+        print(f"{filename}.json created")
+    else:
+        print(f"{filename}.json already exists")
 
 
 def main():
@@ -103,17 +132,19 @@ def main():
     file_list = enumerate_pdf_files(sys.argv[1])
     print(f"Processing {len(file_list)} files...")
     print(f"Processing first file: {file_list[0]}...")
+
+    # extract text from PDF file and save to txt file
     for file_path in file_list:
         filename = get_filename_from_path(file_path)
         extract_txt_from_pdf(file_path, filename)
 
+    # use LLM to prompt desired information from text and save to json file
     for file_path in file_list:
         filename = get_filename_from_path(file_path)
         full_txt_path = f'{txt_path}{filename}.txt'
         f = open(full_txt_path, "r")
         text = f.read()
-        dict = TextToDict(text) 
-        print(dict)
+        textToJson(text, filename)
 
 
 
